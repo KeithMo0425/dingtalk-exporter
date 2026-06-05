@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>导出记录查看器</title>
+    <link rel="stylesheet" href="/static/style.css?v=20260417j">
+    <link rel="stylesheet" href="/static/export_viewer.css?v=20260605b">
+</head>
+<body>
+    <div id="exportViewer" class="export-viewer">
+        <header class="header">
+            <div class="header-left">
+                <a class="viewer-back" href="/">返回</a>
+                <h1 class="logo" id="viewerTitle">导出记录</h1>
+                <span class="sync-status" id="viewerMeta">加载中...</span>
+            </div>
+            <div class="header-right">
+                <div class="search-box">
+                    <input type="text" id="viewerSearchInput" placeholder="搜索会话..." autocomplete="off">
+                    <button id="viewerSearchClear" class="btn-icon" title="清空">×</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <span>导出会话</span>
+                    <span class="conv-count" id="viewerConvCount"></span>
+                </div>
+                <div class="sidebar-toolbar">
+                    <div class="sidebar-tabs" id="viewerTypeTabs">
+                        <button class="sidebar-tab active" data-filter="all">全部</button>
+                        <button class="sidebar-tab" data-filter="group">群聊</button>
+                        <button class="sidebar-tab" data-filter="single">单聊</button>
+                    </div>
+                </div>
+                <div class="conv-list" id="viewerConvList">
+                    <div class="loading">加载中...</div>
+                </div>
+            </aside>
+
+            <main class="content">
+                <div class="empty-state" id="viewerEmpty">
+                    <p>请选择一个导出会话</p>
+                </div>
+                <div class="message-view" id="viewerMessageView" style="display:none">
+                    <div class="message-header">
+                        <div>
+                            <h2 id="viewerConvTitle"></h2>
+                            <span class="conv-meta" id="viewerConvMeta"></span>
+                        </div>
+                        <div class="viewer-page-controls">
+                            <button class="btn viewer-btn" id="viewerPrevPage">上一页</button>
+                            <span id="viewerPageInfo"></span>
+                            <button class="btn viewer-btn" id="viewerNextPage">下一页</button>
+                        </div>
+                    </div>
+                    <div class="message-list" id="viewerMessageList"></div>
+                </div>
+            </main>
+        </div>
+
+        <div class="lightbox" id="lightbox" style="display:none">
+            <button class="lightbox-close" id="lightboxClose">&times;</button>
+            <img id="lightboxImg" src="" alt="">
+        </div>
+    </div>
+
+    <script src="/static/export_viewer.js?v=20260605b"></script>
+</body>
+</html>

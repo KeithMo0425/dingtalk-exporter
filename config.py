@@ -139,8 +139,8 @@ def _detect_dingwave():
 # Manual defaults (fallback when auto-detection and env vars both fail):
 _detected_dir, _detected_uid = _detect_dingtalk_user()
 
-DINGTALK_DATA_DIR = _detected_dir or r"C:\Users\<YOUR_USERNAME>\AppData\Roaming\DingTalk\<YOUR_UID>_v2"
-USER_UID = _detected_uid or "<YOUR_UID>"
+DINGTALK_DATA_DIR = _detected_dir or r"/Users/keithmo/Library/Application Support/DingTalkMac/33401907_v2"
+USER_UID = _detected_uid or "33401907"
 
 ENCRYPTED_DB_DIR = os.path.join(DINGTALK_DATA_DIR, "DBFiles")
 ENCRYPTED_DB = os.path.join(ENCRYPTED_DB_DIR, "dingtalk.db")

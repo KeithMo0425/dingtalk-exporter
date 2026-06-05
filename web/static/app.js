@@ -510,6 +510,7 @@ async function loadExports() {
         const isDir = exp.type === 'directory';
         const badge = isDir ? '<span style="font-size:11px;padding:1px 5px;border-radius:3px;background:#e1f0ff;color:#2196f3;margin-right:6px">含附件</span>' : '';
         const dlUrl = exp.download_url || `/api/exports/${encodeURIComponent(exp.filename)}`;
+        const viewUrl = exp.view_url || `/export-viewer/${encodeURIComponent(exp.filename)}`;
         return `
         <div class="export-item">
             <div>
@@ -518,6 +519,7 @@ async function loadExports() {
             </div>
             <div>
                 <span class="export-size">${isDir ? '目录' : formatSize(exp.size)}</span>
+                <a class="export-download" href="${viewUrl}" target="_blank">查看</a>
                 <a class="export-download" href="${dlUrl}" download>下载${isDir ? ' ZIP' : ''}</a>
             </div>
         </div>

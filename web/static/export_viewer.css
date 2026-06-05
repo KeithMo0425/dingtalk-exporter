@@ -1,0 +1,126 @@
+.export-viewer {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.export-viewer .main-layout,
+.export-viewer .sidebar,
+.export-viewer .content,
+.export-viewer .message-view {
+    min-height: 0;
+}
+
+.export-viewer .conv-list,
+.export-viewer .message-list {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.export-viewer .viewer-back {
+    color: rgba(255,255,255,0.9);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 4px 8px;
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 4px;
+}
+
+.export-viewer .viewer-back:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+.export-viewer .viewer-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-light);
+}
+
+.export-viewer .viewer-btn {
+    background: #fff;
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.export-viewer .viewer-btn:hover {
+    background: var(--hover-bg);
+}
+
+.export-viewer .viewer-btn:disabled {
+    opacity: 0.45;
+}
+
+.export-viewer .conv-item .conv-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.export-viewer .viewer-last {
+    color: var(--text-light);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.export-viewer .msg-item {
+    max-width: 78%;
+}
+
+.export-viewer .msg-item.self {
+    margin-left: 0;
+}
+
+.export-viewer .msg-bubble {
+    white-space: pre-wrap;
+}
+
+.export-viewer .msg-image {
+    margin: 6px 0;
+    cursor: pointer;
+}
+
+.export-viewer .viewer-file-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.export-viewer .viewer-file-link:hover {
+    text-decoration: underline;
+}
+
+.export-viewer .viewer-inline-image {
+    display: block;
+}
+
+.export-viewer .viewer-no-results {
+    padding: 20px;
+    color: var(--text-light);
+    text-align: center;
+}
+
+@media (max-width: 768px) {
+    .export-viewer .header {
+        height: auto;
+        min-height: 50px;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 8px 12px;
+    }
+
+    .export-viewer .header-right,
+    .export-viewer .search-box,
+    .export-viewer .search-box input {
+        width: 100%;
+    }
+
+    .export-viewer .content {
+        display: flex;
+    }
+}

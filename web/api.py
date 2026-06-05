@@ -1,5 +1,9 @@
-import os
 import logging
+import json
+import os
+import re
+from collections import Counter
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
@@ -54,6 +58,15 @@ async def index():
     return HTMLResponse("<h1>DingTalk Exporter</h1><p>Frontend not found</p>")
 
 
+@app.get("/export-viewer/{name}", response_class=HTMLResponse)
+async def export_viewer(name: str):
+    """Serve the export JSON viewer page."""
+    html_path = os.path.join(STATIC_DIR, "export_viewer.html")
+    if os.path.exists(html_path):
+        return FileResponse(html_path)
+    return HTMLResponse("<h1>Export Viewer</h1><p>Viewer not found</p>")
+
+
 # Mount static files
 if os.path.isdir(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -61,10 +74,221 @@ if os.path.isdir(STATIC_DIR):
 
 # --- API Routes ---
 
+_export_data_cache = {}
+
+_ID_TITLE_RE = re.compile(r"^\d+(?::\d+)?$")
+
+
+def _safe_join(base_dir, *parts):
+    """Join paths while preventing traversal outside base_dir."""
+    base_path = os.path.abspath(os.path.normpath(base_dir))
+    full_path = os.path.abspath(os.path.normpath(os.path.join(base_path, *parts)))
+    if full_path != base_path and not full_path.startswith(base_path + os.sep):
+        raise HTTPException(status_code=403, detail="Access denied")
+    return full_path
+
+
+def _get_export_json_path(name):
+    export_path = _safe_join(config.EXPORT_DIR, name)
+    if os.path.isdir(export_path):
+        return _safe_join(export_path, "export.json")
+    if export_path.endswith(".json"):
+        return export_path
+    return _safe_join(export_path, "export.json")
+
+
+def _load_export_data(name):
+    json_path = _get_export_json_path(name)
+    if not os.path.exists(json_path):
+        raise HTTPException(status_code=404, detail="Export JSON not found")
+
+    stat = os.stat(json_path)
+    cache_key = (json_path, stat.st_mtime, stat.st_size)
+    cached = _export_data_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Invalid export JSON: {e}") from e
+
+    _export_data_cache.clear()
+    _export_data_cache[cache_key] = data
+    return data
+
+
+def _infer_export_user_uid(conversations):
+    counts = Counter()
+    right_side_counts = Counter()
+    for conv in conversations:
+        if conv.get("type") != "single":
+            continue
+        cid = str(conv.get("conversation_id", ""))
+        if ":" not in cid:
+            continue
+        parts = [part for part in cid.split(":") if part]
+        for part in parts:
+            if part:
+                counts[part] += 1
+        if len(parts) >= 2:
+            right_side_counts[parts[-1]] += 1
+    if counts:
+        best_uid, best_count = counts.most_common(1)[0]
+        tied = [uid for uid, count in counts.items() if count == best_count]
+        if len(tied) == 1:
+            return best_uid
+        for uid, _ in right_side_counts.most_common():
+            if uid in tied:
+                return uid
+        return best_uid
+    return str(config.USER_UID or "")
+
+
+def _is_identifier_title(title):
+    return not title or bool(_ID_TITLE_RE.fullmatch(str(title).strip()))
+
+
+def _single_chat_display_title(conv, export_user_uid):
+    raw_title = str(conv.get("title", "") or "").strip()
+    cid = str(conv.get("conversation_id", "") or "").strip()
+    if conv.get("type") != "single" or not _is_identifier_title(raw_title):
+        return raw_title or cid
+
+    messages = conv.get("messages", [])
+    sender_names = {}
+    for msg in messages:
+        sender_id = str(msg.get("sender_id", "") or "")
+        sender_name = str(msg.get("sender_name", "") or "").strip()
+        if sender_id and sender_name:
+            sender_names[sender_id] = sender_name
+
+    cid_parts = [part for part in cid.split(":") if part]
+    other_uids = [part for part in cid_parts if part != export_user_uid]
+    if not other_uids and cid_parts:
+        other_uids = [cid_parts[0]]
+
+    for uid in other_uids:
+        if sender_names.get(uid):
+            return sender_names[uid]
+
+    for msg in reversed(messages):
+        sender_id = str(msg.get("sender_id", "") or "")
+        sender_name = str(msg.get("sender_name", "") or "").strip()
+        if sender_name and sender_id != export_user_uid:
+            return sender_name
+
+    for msg in reversed(messages):
+        sender_name = str(msg.get("sender_name", "") or "").strip()
+        if sender_name:
+            return sender_name
+
+    return raw_title or cid
+
+
+def _message_timestamp(msg):
+    created_at = msg.get("created_at", 0)
+    if isinstance(created_at, (int, float)) and created_at:
+        return created_at
+    created_at_str = msg.get("created_at_str", "")
+    if created_at_str:
+        try:
+            return int(datetime.strptime(created_at_str, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _summarize_conversation(conv, export_user_uid=None):
+    messages = conv.get("messages", [])
+    last_message = max(messages, key=_message_timestamp) if messages else {}
+    title = conv.get("title", "") or conv.get("conversation_id", "")
+    display_title = _single_chat_display_title(conv, export_user_uid or "")
+    last_time = _message_timestamp(last_message)
+    return {
+        "conversation_id": conv.get("conversation_id", ""),
+        "title": title,
+        "display_title": display_title,
+        "type": conv.get("type", ""),
+        "member_count": conv.get("member_count", 0),
+        "message_count": len(messages),
+        "last_time": last_time,
+        "last_time_str": last_message.get("created_at_str", ""),
+        "last_sender": last_message.get("sender_name", ""),
+        "last_content": (
+            last_message.get("content")
+            or last_message.get("text")
+            or last_message.get("content_type_name")
+            or ""
+        )[:160],
+    }
+
 @app.get("/api/config")
 async def api_config():
     """Return public configuration for the frontend."""
     return {"user_uid": config.USER_UID}
+
+
+@app.get("/api/export-viewer/{name}")
+async def api_export_viewer_data(name: str):
+    """Return a previously exported export.json for browser viewing."""
+    return _load_export_data(name)
+
+
+@app.get("/api/export-viewer/{name}/summary")
+async def api_export_viewer_summary(name: str):
+    """Return export metadata and conversation summaries without message bodies."""
+    data = _load_export_data(name)
+    conversations = data.get("conversations", [])
+    export_user_uid = _infer_export_user_uid(conversations)
+    summaries = [
+        _summarize_conversation(c, export_user_uid) for c in conversations
+    ]
+    summaries.sort(key=lambda c: c.get("last_time", 0), reverse=True)
+    return {
+        "export_time": data.get("export_time", ""),
+        "export_type": data.get("export_type", ""),
+        "total_conversations": len(conversations),
+        "total_messages": sum(len(c.get("messages", [])) for c in conversations),
+        "conversations": summaries,
+    }
+
+
+@app.get("/api/export-viewer/{name}/messages")
+async def api_export_viewer_messages(
+    name: str,
+    cid: str = Query(..., min_length=1),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    """Return paginated messages for one exported conversation."""
+    data = _load_export_data(name)
+    export_user_uid = _infer_export_user_uid(data.get("conversations", []))
+    for conv in data.get("conversations", []):
+        if str(conv.get("conversation_id", "")) == cid:
+            messages = conv.get("messages", [])
+            page = messages[offset:offset + limit]
+            return {
+                "conversation": _summarize_conversation(conv, export_user_uid),
+                "total": len(messages),
+                "limit": limit,
+                "offset": offset,
+                "messages": page,
+            }
+    raise HTTPException(status_code=404, detail="Conversation not found")
+
+
+@app.get("/api/export-viewer/{name}/files/{path:path}")
+async def api_export_viewer_file(name: str, path: str):
+    """Serve files referenced by an export directory."""
+    export_dir = _safe_join(config.EXPORT_DIR, name)
+    if not os.path.isdir(export_dir):
+        raise HTTPException(status_code=404, detail="Export directory not found")
+    full_path = _safe_join(export_dir, path)
+    if not os.path.exists(full_path) or not os.path.isfile(full_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(full_path)
 
 
 @app.get("/api/conversations")
@@ -305,6 +529,7 @@ async def api_list_exports():
                         "size": os.path.getsize(json_path),
                         "modified": os.path.getmtime(fp),
                         "download_url": f"/api/exports/{f}/download",
+                        "view_url": f"/export-viewer/{f}",
                     })
             elif f.endswith(".json"):
                 # Legacy single-file export
@@ -314,5 +539,6 @@ async def api_list_exports():
                     "size": os.path.getsize(fp),
                     "modified": os.path.getmtime(fp),
                     "download_url": f"/api/exports/{f}",
+                    "view_url": f"/export-viewer/{f}",
                 })
     return {"exports": exports}
