@@ -7,6 +7,24 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 logger = logging.getLogger(__name__)
 
 
+def _env_bool(name, default):
+    """Read a boolean environment variable with common true/false spellings."""
+    value = os.environ.get(name)
+    if value is None or value.strip() == "":
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+
+    logger.warning(
+        f"Invalid boolean value for {name}={value!r}; using default {default!r}"
+    )
+    return default
+
+
 def _detect_dingtalk_user():
     """Auto-detect DingTalk user data directory and UID.
 
@@ -149,6 +167,7 @@ ENCRYPTED_DB = os.path.join(ENCRYPTED_DB_DIR, "dingtalk.db")
 DINGWAVE_PATH = _detect_dingwave()
 
 # Sync settings
+SYNC_LOCAL_DINGTALK_DATA = _env_bool("SYNC_LOCAL_DINGTALK_DATA", False)
 SYNC_INTERVAL_HOURS = 4
 COPY_RETRY_COUNT = 3
 COPY_RETRY_DELAY = 30  # seconds

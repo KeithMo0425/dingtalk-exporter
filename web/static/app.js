@@ -11,6 +11,7 @@ const state = {
     convOffset: 0,
     convLimit: 50,
     myUid: '',
+    syncLocalDingTalkData: true,
 };
 
 // --- API helpers ---
@@ -443,15 +444,37 @@ function highlightSearch(text, query) {
 
 // --- Sync ---
 
+function applySyncAvailability(enabled) {
+    state.syncLocalDingTalkData = enabled;
+
+    const syncBtn = document.getElementById('syncBtn');
+    if (syncBtn) {
+        syncBtn.disabled = !enabled;
+        syncBtn.title = enabled ? '手动同步' : '本地同步已关闭';
+    }
+
+    const fullExportBtn = document.getElementById('fullExportBtn');
+    if (fullExportBtn) {
+        fullExportBtn.disabled = !enabled;
+        fullExportBtn.title = enabled ? '全量导出所有会话' : '本地同步已关闭';
+    }
+}
+
 async function loadSyncStatus() {
     try {
-        const state = await apiGet('/api/sync/status');
+        const syncState = await apiGet('/api/sync/status');
         const el = document.getElementById('syncStatus');
-        if (state.is_syncing) {
+        if (syncState.sync_enabled === false) {
+            applySyncAvailability(false);
+            el.textContent = '本地同步已关闭';
+        } else if (syncState.is_syncing) {
+            applySyncAvailability(true);
             el.textContent = '同步中...';
-        } else if (state.last_sync_time_str) {
-            el.textContent = `上次同步: ${state.last_sync_time_str}`;
+        } else if (syncState.last_sync_time_str) {
+            applySyncAvailability(true);
+            el.textContent = `上次同步: ${syncState.last_sync_time_str}`;
         } else {
+            applySyncAvailability(true);
             el.textContent = '尚未同步';
         }
     } catch (e) {
@@ -460,6 +483,11 @@ async function loadSyncStatus() {
 }
 
 async function triggerSync() {
+    if (state.syncLocalDingTalkData === false) {
+        document.getElementById('syncStatus').textContent = '本地同步已关闭';
+        return;
+    }
+
     const btn = document.getElementById('syncBtn');
     btn.disabled = true;
     btn.textContent = '同步中...';
@@ -621,6 +649,7 @@ function init() {
     // Fetch current user UID
     apiGet('/api/config').then(data => {
         state.myUid = String(data.user_uid || '');
+        applySyncAvailability(data.sync_local_dingtalk_data !== false);
     }).catch(() => {});
 
     // Load conversations
@@ -763,6 +792,11 @@ function init() {
 
     // Full export
     document.getElementById('fullExportBtn').addEventListener('click', async () => {
+        if (state.syncLocalDingTalkData === false) {
+            document.getElementById('exportProgress').textContent = '本地同步已关闭';
+            return;
+        }
+
         const btn = document.getElementById('fullExportBtn');
         const progress = document.getElementById('exportProgress');
         btn.disabled = true;

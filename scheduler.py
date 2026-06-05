@@ -45,12 +45,20 @@ def _save_state():
 
 def get_sync_state():
     """Get current sync state."""
-    return _sync_state.copy()
+    state = _sync_state.copy()
+    state["sync_enabled"] = config.SYNC_LOCAL_DINGTALK_DATA
+    if not config.SYNC_LOCAL_DINGTALK_DATA:
+        state["next_sync_time"] = None
+    return state
 
 
 def do_sync(full=False):
     """Execute a sync cycle: decrypt -> export incremental -> update state."""
     global _sync_state
+
+    if not config.SYNC_LOCAL_DINGTALK_DATA:
+        logger.info("Local DingTalk data sync is disabled, skipping")
+        return False
 
     if _sync_state["is_syncing"]:
         logger.warning("Sync already in progress, skipping")
@@ -113,6 +121,11 @@ def setup_scheduler(app=None):
     _load_state()
 
     scheduler = BackgroundScheduler()
+
+    if not config.SYNC_LOCAL_DINGTALK_DATA:
+        _sync_state["next_sync_time"] = None
+        logger.info("Scheduler disabled: local DingTalk data sync is disabled")
+        return scheduler
 
     # Add the sync job
     scheduler.add_job(

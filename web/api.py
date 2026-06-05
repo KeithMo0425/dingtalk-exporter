@@ -2,6 +2,7 @@ import logging
 import json
 import os
 import re
+import sqlite3
 from collections import Counter
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Query
@@ -32,6 +33,11 @@ _scheduler = None
 @app.on_event("startup")
 async def startup():
     global _scheduler
+    if not config.SYNC_LOCAL_DINGTALK_DATA:
+        _scheduler = None
+        logger.info("Scheduler disabled: local DingTalk data sync is disabled")
+        return
+
     _scheduler = setup_scheduler(app)
     _scheduler.start()
     logger.info("Scheduler started")
@@ -78,6 +84,14 @@ _export_data_cache = {}
 
 _ID_TITLE_RE = re.compile(r"^\d+(?::\d+)?$")
 
+_EMPTY_STATS = {
+    "total_conversations": 0,
+    "total_messages": 0,
+    "single_chats": 0,
+    "group_chats": 0,
+    "total_users": 0,
+}
+
 
 def _safe_join(base_dir, *parts):
     """Join paths while preventing traversal outside base_dir."""
@@ -86,6 +100,40 @@ def _safe_join(base_dir, *parts):
     if full_path != base_path and not full_path.startswith(base_path + os.sep):
         raise HTTPException(status_code=403, detail="Access denied")
     return full_path
+
+
+def _is_decrypted_database_ready():
+    """Return whether the decrypted database has the base DingTalk tables."""
+    db_path = config.DECRYPTED_DB_PATH
+    if not os.path.exists(db_path):
+        return False
+
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                  AND name IN ('tbconversation', 'tbuser_profile_v2')
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as e:
+        logger.warning(f"Decrypted database is not readable: {e}")
+        return False
+
+    table_names = {row[0] for row in rows}
+    return {"tbconversation", "tbuser_profile_v2"}.issubset(table_names)
+
+
+def _database_unavailable(extra=None):
+    payload = {"database_ready": False}
+    if extra:
+        payload.update(extra)
+    return payload
 
 
 def _get_export_json_path(name):
@@ -227,7 +275,10 @@ def _summarize_conversation(conv, export_user_uid=None):
 @app.get("/api/config")
 async def api_config():
     """Return public configuration for the frontend."""
-    return {"user_uid": config.USER_UID}
+    return {
+        "user_uid": config.USER_UID,
+        "sync_local_dingtalk_data": config.SYNC_LOCAL_DINGTALK_DATA,
+    }
 
 
 @app.get("/api/export-viewer/{name}")
@@ -297,6 +348,9 @@ async def api_conversations(
     offset: int = Query(0, ge=0),
     keyword: str = Query(None),
 ):
+    if not _is_decrypted_database_ready():
+        return _database_unavailable({"total": 0, "conversations": []})
+
     conn = get_connection()
     try:
         result = get_conversations(conn, limit=limit, offset=offset, keyword=keyword)
@@ -313,6 +367,9 @@ async def api_messages(
     since: int = Query(None, description="Since timestamp (ms)"),
     until: int = Query(None, description="Until timestamp (ms)"),
 ):
+    if not _is_decrypted_database_ready():
+        return _database_unavailable({"total": 0, "messages": []})
+
     conn = get_connection()
     try:
         result = get_messages(conn, cid, limit=limit, offset=offset, since_time=since, until_time=until)
@@ -327,6 +384,9 @@ async def api_search(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    if not _is_decrypted_database_ready():
+        return _database_unavailable({"query": q, "total": 0, "messages": []})
+
     conn = get_connection()
     try:
         results = search_messages(conn, q, limit=limit, offset=offset)
@@ -337,6 +397,9 @@ async def api_search(
 
 @app.get("/api/stats")
 async def api_stats():
+    if not _is_decrypted_database_ready():
+        return _database_unavailable(_EMPTY_STATS.copy())
+
     conn = get_connection()
     try:
         stats = get_conversation_stats(conn)
@@ -353,6 +416,12 @@ async def api_sync_status():
 
 @app.post("/api/sync/trigger")
 async def api_sync_trigger(full: bool = Query(False)):
+    if not config.SYNC_LOCAL_DINGTALK_DATA:
+        raise HTTPException(
+            status_code=403,
+            detail="Local DingTalk data sync is disabled",
+        )
+
     state = get_sync_state()
     if state.get("is_syncing"):
         raise HTTPException(status_code=409, detail="Sync already in progress")

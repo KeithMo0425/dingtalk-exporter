@@ -68,6 +68,30 @@ python main.py
 
 或直接修改 `config.py` 中的默认值。
 
+### 本地钉钉数据同步
+
+默认不会读取、复制、解密本机钉钉数据库，只用于查看已有解密数据和已导出文件。如需自动同步和手动同步本地钉钉数据，请显式开启：
+
+```bat
+set SYNC_LOCAL_DINGTALK_DATA=true
+python main.py
+```
+
+macOS/Linux:
+
+```bash
+export SYNC_LOCAL_DINGTALK_DATA=true
+python main.py
+```
+
+或在 `config.py` 中设置：
+
+```python
+SYNC_LOCAL_DINGTALK_DATA = True
+```
+
+未开启时不会启动自动同步定时任务，Web 界面的"手动同步"和"全量导出所有会话"也会被禁用。
+
 ## 工作原理
 
 1. 复制加密数据库（`dingtalk.db`）到临时目录，避免锁冲突
